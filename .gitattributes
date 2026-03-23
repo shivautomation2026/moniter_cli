@@ -1,0 +1,5 @@
+*.nsi linguist-vendored
+*.nsh linguist-vendored
+*.nsi linguist-generated
+*.nsh linguist-generated
+*.go linguist-language=Go
