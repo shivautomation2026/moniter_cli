@@ -22,7 +22,7 @@ func main() {
 
 func runWails() {
 	app := application.New(application.Options{
-		Name: "My App",
+		Name: "Moniter CLI - ShivAutomation",
 		Services: []application.Service{
 			application.NewService(appInstance),
 		},
@@ -50,7 +50,7 @@ func runWails() {
 	appInstance.setApplication(app)
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:        "My App",
+		Title:        "Moniter CLI - ShivAutomation",
 		Width:        1024,
 		Height:       768,
 		HideOnEscape: true,
@@ -67,7 +67,8 @@ func runWails() {
 
 	tray := app.SystemTray.New()
 	tray.SetIcon(icon)
-	tray.SetTooltip("My App")
+	tray.SetLabel("Moniter CLI")
+	tray.SetTooltip("Moniter CLI - ShivAutomation")
 	tray.SetMenu(buildTray(app, appInstance))
 	tray.AttachWindow(window)
 
