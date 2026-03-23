@@ -1,0 +1,8 @@
+{
+    "pdf_folder": "C:\\Users\\YourUsername\\Desktop\\PDF_Input",
+    "base_output_folder": "C:\\Users\\YourUsername\\Desktop\\Excel_Output",
+    "log_file": "C:\\Users\\YourUsername\\Desktop\\Logs\\monitor.log",
+    "source_token": "BETTER STACK SOURCE TOKEN HERE",
+    "ingest_url": "https://YOUR_REGION.betterstackdata.com",
+    "base_url": "https://YOUR_OCR_SERVICE_URL"
+}
