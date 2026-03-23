@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF Monitor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 24px;
+            max-width: 720px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 12px;
+        }
+
+        input {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            margin-top: 6px;
+        }
+
+        .row {
+            display: flex;
+            gap: 8px;
+            align-items: end;
+        }
+
+        .row input {
+            flex: 1;
+        }
+
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+
+        #runningSection {
+            display: none;
+        }
+
+        #output {
+            background: #f5f5f5;
+            padding: 12px;
+            min-height: 80px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body style="--wails-draggable:drag">
+    <div id="app">
+        <h2>Configuration Input Form</h2>
+
+        <div id="setupSection">
+            <form id="configForm">
+                <label>
+                    PDF Folder:
+                    <div class="row">
+                        <input type="text" id="pdf_folder" name="pdf_folder" readonly required />
+                        <button type="button" id="pickPdfFolder">Browse</button>
+                    </div>
+                </label>
+
+                <label>
+                    Base Output Folder:
+                    <div class="row">
+                        <input type="text" id="base_output_folder" name="base_output_folder" readonly required />
+                        <button type="button" id="pickBaseOutputFolder">Browse</button>
+                    </div>
+                </label>
+
+                <label>
+                    Source Token:
+                    <input type="text" id="source_token" name="source_token" />
+                </label>
+
+                <label>
+                    Ingest URL:
+                    <input type="url" id="ingest_url" name="ingest_url" />
+                </label>
+
+                <label>
+                    S3 Bucket Name:
+                    <input type="text" id="s3_bucket_name" name="s3_bucket_name" value="sap-pdfs" required />
+                </label>
+
+                <label>
+                    S3 Endpoint URL:
+                    <input type="url" id="s3_endpoint_url" name="s3_endpoint_url" />
+                </label>
+
+                <label>
+                    S3 Region:
+                    <input type="text" id="s3_region" name="s3_region" value="ap-northeast-1" required />
+                </label>
+
+                <label>
+                    S3 Access Key:
+                    <input type="text" id="s3_access_key" name="s3_access_key" />
+                </label>
+
+                <label>
+                    S3 Secret Key:
+                    <input type="password" id="s3_secret_key" name="s3_secret_key" />
+                </label>
+
+                <button type="submit" id="submitBtn">Save and Start</button>
+            </form>
+        </div>
+
+        <div id="runningSection">
+            <h3>Monitor Running</h3>
+            <p id="runningStatus">Background monitor is active.</p>
+            <button id="stopMonitorBtn" type="button">Stop Monitor</button>
+            <button id="hideWindowBtn" type="button">Minimize to Tray</button>
+        </div>
+
+        <h3>Status</h3>
+        <pre id="output"></pre>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+</body>
+
+</html>
