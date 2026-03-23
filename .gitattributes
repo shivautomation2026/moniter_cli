@@ -2,4 +2,8 @@
 *.nsh linguist-vendored
 *.nsi linguist-generated
 *.nsh linguist-generated
+*.ts linguist-generated
+*.go.mod linguist-generated
+*.go.sum linguist-generated
+*.sh linguist-generated
 *.go linguist-language=Go
