@@ -6,28 +6,160 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PDF Monitor</title>
     <style>
+        :root {
+            --bg: #f4f7fb;
+            --panel: rgba(255, 255, 255, 0.92);
+            --panel-border: rgba(15, 23, 42, 0.08);
+            --text: #1f2937;
+            --muted: #6b7280;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --danger: #dc2626;
+            --danger-hover: #b91c1c;
+            --input-bg: #ffffff;
+            --input-border: #d1d5db;
+            --input-focus: rgba(37, 99, 235, 0.18);
+            --shadow: 0 18px 45px rgba(15, 23, 42, 0.10);
+            --radius: 18px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            margin: 24px;
-            max-width: 720px;
+            margin: 0;
+            min-height: 100vh;
+            font-family: Inter, Arial, sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(37, 99, 235, 0.10), transparent 28%),
+                radial-gradient(circle at top right, rgba(99, 102, 241, 0.12), transparent 32%),
+                var(--bg);
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 28px;
+        }
+
+        #app {
+            width: 100%;
+            max-width: 860px;
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 24px;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(10px);
+            padding: 32px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 28px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+        }
+
+        .branding {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            margin-bottom: 10px;
+        }
+
+        .branding img {
+            width: 350px;
+            height: 140px;
+            border-radius: 16px;
+            padding: 6px;
+        }
+
+        .branding h1 {
+            margin: 0;
+            font-size: 30px;
+            font-weight: 700;
+            letter-spacing: -0.4px;
+            background: linear-gradient(135deg, #1d4ed8, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--muted);
+        }
+
+        #setupSection,
+        #runningSection,
+        .status-card {
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, 0.07);
+            border-radius: var(--radius);
+            padding: 22px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+        }
+
+        #setupSection {
+            margin-bottom: 18px;
+        }
+
+        #runningSection {
+            display: none;
+            margin-bottom: 18px;
+        }
+
+        .section-title {
+            margin: 0 0 18px;
+            font-size: 18px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        form {
+            display: grid;
+            gap: 14px;
+        }
+
+        .field {
+            display: grid;
+            gap: 6px;
         }
 
         label {
-            display: block;
-            margin-bottom: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #374151;
         }
 
         input {
+            padding: 10px 12px;
+            font-size: 13px;
             width: 100%;
-            padding: 8px;
-            box-sizing: border-box;
-            margin-top: 6px;
+            border: 1px solid var(--input-border);
+            border-radius: 12px;
+            background: var(--input-bg);
+            color: var(--text);
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px var(--input-focus);
+        }
+
+        input[readonly] {
+            background: #f9fafb;
+            color: #4b5563;
         }
 
         .row {
             display: flex;
-            gap: 8px;
-            align-items: end;
+            gap: 10px;
+            align-items: stretch;
         }
 
         .row input {
@@ -35,79 +167,210 @@
         }
 
         button {
-            padding: 8px 12px;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 600;
             cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
         }
 
-        #runningSection {
-            display: none;
+        button:hover {
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .row button {
+            white-space: nowrap;
+            background: #eef2ff;
+            color: #3730a3;
+        }
+
+        .row button:hover {
+            background: #e0e7ff;
+        }
+
+        #submitBtn {
+            background: linear-gradient(135deg, var(--primary), #4f46e5);
+            color: white;
+            box-shadow: 0 10px 24px rgba(37, 99, 235, 0.25);
+            margin-top: 4px;
+        }
+
+        #submitBtn:hover {
+            background: linear-gradient(135deg, var(--primary-hover), #4338ca);
+        }
+
+        .action-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        #stopMonitorBtn {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        #stopMonitorBtn:hover {
+            background: var(--danger-hover);
+        }
+
+        #hideWindowBtn {
+            background: #111827;
+            color: #fff;
+        }
+
+        #hideWindowBtn:hover {
+            background: #000000;
+        }
+
+        #runningStatus {
+            margin: 0;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .status-card h3,
+        #runningSection h3 {
+            margin: 0 0 10px;
+            font-size: 17px;
+            font-weight: 700;
         }
 
         #output {
-            background: #f5f5f5;
-            padding: 12px;
-            min-height: 80px;
+            margin: 0;
+            background: #0f172a;
+            color: #e5e7eb;
+            border-radius: 14px;
+            padding: 16px;
+            min-height: 140px;
             white-space: pre-wrap;
+            overflow-wrap: break-word;
+            font-size: 13px;
+            line-height: 1.55;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        @media (max-width: 640px) {
+            body {
+                padding: 16px;
+            }
+
+            .two-col {
+                grid-template-columns: 1fr;
+            }
+
+            #app {
+                padding: 20px;
+                border-radius: 18px;
+            }
+
+            .branding {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .branding h1 {
+                font-size: 26px;
+            }
+
+            .row {
+                flex-direction: column;
+            }
+
+            .action-row {
+                flex-direction: column;
+            }
+
+            .action-row button,
+            .row button,
+            #submitBtn {
+                width: 100%;
+            }
         }
     </style>
 </head>
 
 <body style="--wails-draggable:drag">
     <div id="app">
-        <h2>Configuration Input Form</h2>
+        <div class="header">
+            <div class="branding">
+                <img src="src/assets/images/logo.jpeg" alt="ShivAutomation Logo">
+            </div>
+            <h2 class="subtitle">Configuration Input Form</h2>
+        </div>
 
         <div id="setupSection">
+            <h3 class="section-title">Setup</h3>
             <form id="configForm">
-                <label>
-                    PDF Folder:
-                    <div class="row">
-                        <input type="text" id="pdf_folder" name="pdf_folder" readonly required />
-                        <button type="button" id="pickPdfFolder">Browse</button>
+                <div class="field two-col">
+                    <div>
+                        <label for="pdf_folder">PDF Folder</label>
+                        <div class="row">
+                            <input type="text" id="pdf_folder" name="pdf_folder" readonly required />
+                            <button type="button" id="pickPdfFolder">Browse</button>
+                        </div>
                     </div>
-                </label>
 
-                <label>
-                    Base Output Folder:
-                    <div class="row">
-                        <input type="text" id="base_output_folder" name="base_output_folder" readonly required />
-                        <button type="button" id="pickBaseOutputFolder">Browse</button>
+                    <div>
+                        <label for="base_output_folder">Base Output Folder</label>
+                        <div class="row">
+                            <input type="text" id="base_output_folder" name="base_output_folder" readonly required />
+                            <button type="button" id="pickBaseOutputFolder">Browse</button>
+                        </div>
                     </div>
-                </label>
+                </div>
 
-                <label>
-                    Source Token:
+                <div class="field">
+                    <label for="source_token">Source Token</label>
                     <input type="text" id="source_token" name="source_token" />
-                </label>
+                </div>
 
-                <label>
-                    Ingest URL:
+                <div class="field">
+                    <label for="ingest_url">Ingest URL</label>
                     <input type="url" id="ingest_url" name="ingest_url" />
-                </label>
+                </div>
 
-                <label>
-                    S3 Bucket Name:
-                    <input type="text" id="s3_bucket_name" name="s3_bucket_name" value="sap-pdfs" required />
-                </label>
+                <div class="field two-col">
+                    <div>
+                        <label for="s3_bucket_name">S3 Bucket Name</label>
+                        <input type="text" id="s3_bucket_name" name="s3_bucket_name" value="sap-pdfs" required />
+                    </div>
 
-                <label>
-                    S3 Endpoint URL:
+                    <div>
+                        <label for="s3_region">S3 Region</label>
+                        <input type="text" id="s3_region" name="s3_region" value="ap-northeast-1" required />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="s3_endpoint_url">S3 Endpoint URL</label>
                     <input type="url" id="s3_endpoint_url" name="s3_endpoint_url" />
-                </label>
+                </div>
 
-                <label>
-                    S3 Region:
-                    <input type="text" id="s3_region" name="s3_region" value="ap-northeast-1" required />
-                </label>
 
-                <label>
-                    S3 Access Key:
+
+                <div class="field">
+                    <label for="s3_access_key">S3 Access Key</label>
                     <input type="text" id="s3_access_key" name="s3_access_key" />
-                </label>
+                </div>
 
-                <label>
-                    S3 Secret Key:
+                <div class="field">
+                    <label for="s3_secret_key">S3 Secret Key</label>
                     <input type="password" id="s3_secret_key" name="s3_secret_key" />
-                </label>
+                </div>
 
                 <button type="submit" id="submitBtn">Save and Start</button>
             </form>
@@ -116,12 +379,16 @@
         <div id="runningSection">
             <h3>Monitor Running</h3>
             <p id="runningStatus">Background monitor is active.</p>
-            <button id="stopMonitorBtn" type="button">Stop Monitor</button>
-            <button id="hideWindowBtn" type="button">Minimize to Tray</button>
+            <div class="action-row">
+                <button id="stopMonitorBtn" type="button">Stop Monitor</button>
+                <button id="hideWindowBtn" type="button">Minimize to Tray</button>
+            </div>
         </div>
 
-        <h3>Status</h3>
-        <pre id="output"></pre>
+        <div class="status-card">
+            <h3>Status</h3>
+            <pre id="output"></pre>
+        </div>
     </div>
 
     <script type="module" src="./src/main.js"></script>

@@ -3,8 +3,9 @@ import {
     SaveConfigAndStart,
     PickFolder,
     StopMonitor,
-    GetStatus
-} from "../wailsjs/go/main/App";
+    GetStatus,
+    HideWindow,
+} from "../bindings/moniter_cli/app.js";
 
 document.getElementById("pickPdfFolder").addEventListener("click", async () => {
     try {

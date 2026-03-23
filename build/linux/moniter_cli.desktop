@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=moniter_cli
+Exec=moniter_cli
+Icon=moniter_cli
+Categories=Development;
+Terminal=false
+Keywords=wails
+Version=1.0
+StartupNotify=false

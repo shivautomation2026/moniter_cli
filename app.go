@@ -18,7 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/fsnotify/fsnotify"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type Config struct {
@@ -35,43 +35,78 @@ type Config struct {
 
 type App struct {
 	ctx        context.Context
+	wailsApp   *application.App
+	mainWindow *application.WebviewWindow
 	configPath string
 	monitor    *Monitor
 	monitorMu  sync.Mutex
 	lastStatus string
 	statusMu   sync.Mutex
+	allowQuit  bool
+	quitMu     sync.Mutex
 }
 
+func buildTray(wailsApp *application.App, app *App) *application.Menu {
+	tray := wailsApp.NewMenu()
+
+	tray.Add("Show").OnClick(func(*application.Context) {
+		app.ShowWindow()
+	})
+
+	tray.Add("Hide").OnClick(func(*application.Context) {
+		app.HideWindow()
+	})
+
+	tray.AddSeparator()
+
+	tray.Add("Quit").OnClick(func(*application.Context) {
+		app.QuitApp()
+	})
+
+	return tray
+}
 func NewApp() *App {
-	return &App{
+	app := &App{
 		configPath: "./monitor_config.json",
 		lastStatus: "idle",
 	}
+
+	return app
 }
+
+func (a *App) setApplication(wailsApp *application.App) {
+	a.wailsApp = wailsApp
+}
+
+func (a *App) setMainWindow(window *application.WebviewWindow) {
+	a.mainWindow = window
+}
+
 func (a *App) ShowWindow() {
-	if a.ctx == nil {
+	if a.mainWindow == nil {
 		return
 	}
-	runtime.WindowShow(a.ctx)
-	runtime.WindowUnminimise(a.ctx)
-	runtime.Show(a.ctx)
+	a.mainWindow.Show()
+	a.mainWindow.UnMinimise()
+	a.mainWindow.Focus()
 }
 
 func (a *App) HideWindow() {
-	if a.ctx == nil {
+	if a.mainWindow == nil {
 		return
 	}
-	runtime.WindowHide(a.ctx)
+	a.mainWindow.Hide()
 }
 
 func (a *App) QuitApp() {
-	if a.ctx == nil {
+	if a.wailsApp == nil {
 		return
 	}
-	runtime.Quit(a.ctx)
+	a.setAllowQuit(true)
+	a.wailsApp.Quit()
 }
 
-func (a *App) startup(ctx context.Context) {
+func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	a.ctx = ctx
 
 	cfg, err := loadConfig(a.configPath)
@@ -84,9 +119,12 @@ func (a *App) startup(ctx context.Context) {
 	} else {
 		a.setStatus("config not found")
 	}
+
+	return nil
 }
-func (a *App) domReady(ctx context.Context) {
-	a.ctx = ctx
+
+func (a *App) ServiceShutdown() error {
+	return a.StopMonitor()
 }
 
 func (a *App) HasConfig() bool {
@@ -106,15 +144,29 @@ func (a *App) setStatus(s string) {
 	a.statusMu.Unlock()
 }
 
+func (a *App) setAllowQuit(allow bool) {
+	a.quitMu.Lock()
+	a.allowQuit = allow
+	a.quitMu.Unlock()
+}
+
+func (a *App) shouldAllowQuit() bool {
+	a.quitMu.Lock()
+	defer a.quitMu.Unlock()
+	return a.allowQuit
+}
+
 func (a *App) PickFolder() (string, error) {
-	if a.ctx == nil {
-		return "", fmt.Errorf("wails context not ready yet")
+	if a.wailsApp == nil {
+		return "", fmt.Errorf("application not ready yet")
 	}
 
-	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
-		Title: "Select Folder",
-	})
+	return a.wailsApp.Dialog.OpenFile().
+		CanChooseDirectories(true).
+		CanChooseFiles(false).
+		PromptForSingleSelection()
 }
+
 func (a *App) SaveConfigAndStart(cfg Config) (string, error) {
 	if err := validateConfig(cfg); err != nil {
 		return "", err
@@ -140,7 +192,7 @@ func (a *App) SaveConfigAndStart(cfg Config) (string, error) {
 	}
 
 	a.setStatus("monitor running")
-	runtime.WindowHide(a.ctx)
+	a.HideWindow()
 
 	return "Config saved. Monitor started in tray.", nil
 }

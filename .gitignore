@@ -3,3 +3,34 @@ node_modules
 frontend/dist
 moniter_cli
 monitor_config.json
+
+# OS
+.DS_Store
+
+# Build output
+bin
+*.exe
+*.syso
+*.mjs
+frontend/dist
+
+# Dependencies
+frontend/node_modules
+
+# Build artifacts
+.task
+build/linux/appimage/build
+build/windows/TrustedSigning
+build/darwin/clustta.entitlements
+
+
+# Project data
+*.csv
+projects/
+tests/
+
+# Config
+.env
+config.json
+studio_config.json
+

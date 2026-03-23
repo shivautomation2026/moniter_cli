@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=Monitor CLI
+Comment=Desktop monitor for PDF ingestion
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/moniter_cli %u
+Terminal=false
+Type=Application
+Icon=moniter_cli
+Categories=Utility;
+StartupWMClass=moniter_cli
+
+ 
