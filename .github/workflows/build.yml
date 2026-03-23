@@ -1,0 +1,115 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            artifact_name: moniter_cli-linux
+            archive_name: moniter_cli-linux.tar.gz
+          - name: Windows
+            os: windows-latest
+            artifact_name: moniter_cli-windows
+            archive_name: moniter_cli-windows.zip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev pkg-config
+
+      - name: Install Wails CLI
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          WAILS_VERSION="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
+          GOBIN="$RUNNER_TEMP/bin" go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"
+          "$RUNNER_TEMP/bin/wails3" version
+
+      - name: Build application
+        shell: bash
+        run: wails3 task build
+
+      - name: Package Linux artifacts
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p release
+          tar -czf "release/${{ matrix.archive_name }}" -C bin .
+
+      - name: Package Windows artifacts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Compress-Archive -Path bin\* -DestinationPath "release\${{ matrix.archive_name }}" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: release/${{ matrix.archive_name }}
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: moniter_cli-*
+          merge-multiple: true
+          path: release-assets/
+
+      - name: Generate timestamp tag
+        id: timestamp
+        run: echo "tag=build-$(date +'%Y%m%d-%H%M%S')" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: release-assets/*
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.timestamp.outputs.tag }}
+          name: Release ${{ steps.timestamp.outputs.tag }}
+          body: |
+            Automated release generated from the manual GitHub Actions workflow.
+            Assets:
+            - Linux build archive
+            - Windows build archive
