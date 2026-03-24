@@ -11,6 +11,7 @@ on:
       - '**.js'
       - 'Taskfile.yml'
       - 'wails.json'
+      - '.github/workflows/*.yml'
   workflow_dispatch:
 
 permissions:
@@ -88,13 +89,15 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: release/${{ matrix.archive_name }}
           if-no-files-found: error
-
+  
   release:
     name: Create Release
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.timestamp.outputs.tag }}
 
     steps:
       - name: Download build artifacts
@@ -120,3 +123,15 @@ jobs:
             Assets:
             - Linux build archive
             - Windows build archive
+
+  notify:
+    name: Notify on Discord
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send notification to Discord
+        run: |
+          curl -H "Content-Type: application/json" \
+          -X POST \
+          -d "{\"content\": \"A new release has been created for Moniter CLI! Check it out: https://github.com/${{ github.repository }}/releases/tag/${{ needs.release.outputs.tag }}\"}" \
+          ${{ secrets.NOTIFY_URL }}
