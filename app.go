@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -109,15 +110,23 @@ func (a *App) QuitApp() {
 func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	a.ctx = ctx
 
-	cfg, err := loadConfig(a.configPath)
-	if err == nil && cfg != nil {
-		if err := a.startMonitor(cfg); err != nil {
-			a.setStatus("config found, but failed to start monitor: " + err.Error())
+	cfg, err := a.loadValidatedConfig()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			a.setStatus("config not found")
 		} else {
-			a.setStatus("monitor running")
+			a.setStatus("config invalid: " + err.Error())
 		}
+		a.ShowWindow()
+		return nil
+	}
+
+	if err := a.startMonitor(cfg); err != nil {
+		a.setStatus("config found, but failed to start monitor: " + err.Error())
+		a.ShowWindow()
 	} else {
-		a.setStatus("config not found")
+		a.HideWindow()
+		a.setStatus("monitor running")
 	}
 
 	return nil
@@ -128,8 +137,23 @@ func (a *App) ServiceShutdown() error {
 }
 
 func (a *App) HasConfig() bool {
-	_, err := os.Stat(a.configPath)
+	_, err := a.loadValidatedConfig()
 	return err == nil
+}
+
+func (a *App) loadValidatedConfig() (*Config, error) {
+	cfg, err := loadConfig(a.configPath)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateConfig(*cfg); err != nil {
+		return nil, err
+	}
+
+	cfg.PDFFolder = normalizePath(cfg.PDFFolder)
+	cfg.BaseOutputFolder = normalizePath(cfg.BaseOutputFolder)
+
+	return cfg, nil
 }
 
 func (a *App) GetStatus() string {

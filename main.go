@@ -54,6 +54,7 @@ func runWails() {
 		Width:        1024,
 		Height:       768,
 		HideOnEscape: true,
+		Hidden:       true,
 	})
 	appInstance.setMainWindow(window)
 
