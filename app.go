@@ -545,6 +545,20 @@ func getCurrentDayFolder(basePath string) string {
 	return filepath.Join(basePath, time.Now().Format("2006-01-02"))
 }
 
+func ensureDir(path string) (bool, error) {
+	if _, err := os.Stat(path); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 type DynamicFolderHandler struct {
 	baseFolderPath string
 	currentFolder  string
@@ -574,10 +588,13 @@ func NewDynamicFolderHandler(baseFolderPath string, s3Client *s3.Client, bucketN
 }
 
 func (h *DynamicFolderHandler) StartMonitoring() error {
-	if err := os.MkdirAll(h.currentFolder, 0o755); err != nil {
+	created, err := ensureDir(h.currentFolder)
+	if err != nil {
 		return err
 	}
-	h.logger.Printf("Created current day folder: %s", h.currentFolder)
+	if created {
+		h.logger.Printf("Created current day folder: %s", h.currentFolder)
+	}
 
 	if h.watcher != nil {
 		h.Stop()
@@ -625,10 +642,13 @@ func (h *DynamicFolderHandler) CheckForNewDay() error {
 	watcherNil := h.watcher == nil
 	h.mu.Unlock()
 
-	if err := os.MkdirAll(expectedFolder, 0o755); err != nil {
+	created, err := ensureDir(expectedFolder)
+	if err != nil {
 		return err
 	}
-	h.logger.Printf("Created current day folder: %s", expectedFolder)
+	if created {
+		h.logger.Printf("Created current day folder: %s", expectedFolder)
+	}
 
 	if watcherNil {
 		h.mu.Lock()
