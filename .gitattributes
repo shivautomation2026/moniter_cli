@@ -6,4 +6,5 @@
 *.go.mod linguist-generated
 *.go.sum linguist-generated
 *.sh linguist-generated
+*.css linguist-generated
 *.go linguist-language=Go
