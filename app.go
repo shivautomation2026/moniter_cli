@@ -521,9 +521,10 @@ func uploadFileToObjectStore(ctx context.Context, s3Client *s3.Client, filePath,
 	defer f.Close()
 
 	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(s3Key),
-		Body:   f,
+		Bucket:      aws.String(bucketName),
+		Key:         aws.String(s3Key),
+		ContentType: aws.String("application/pdf"),
+		Body:        f,
 	})
 	if err != nil {
 		logger.Printf("Upload failed: %v", err)
