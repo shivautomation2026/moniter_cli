@@ -415,7 +415,7 @@ func configureLogging(cfg Config) (*log.Logger, *os.File, io.Writer, error) {
 		return nil, nil, nil, err
 	}
 
-	writers := []io.Writer{os.Stdout, f}
+	writers := []io.Writer{f}
 	var remote io.Writer
 	if cfg.SourceToken != "" && cfg.IngestURL != "" {
 		remote = &RemoteLogWriter{
@@ -425,8 +425,9 @@ func configureLogging(cfg Config) (*log.Logger, *os.File, io.Writer, error) {
 		}
 		writers = append(writers, remote)
 	}
+	writers = append(writers, os.Stdout)
 
-	logger := log.New(io.MultiWriter(writers...), "", log.LstdFlags)
+	logger := log.New(newResilientMultiWriter(writers...), "", log.LstdFlags)
 	logger.Printf("Daily Log File: %s", logFilePath)
 	logger.Printf("Configuration loaded.")
 	return logger, f, remote, nil
@@ -436,6 +437,50 @@ type RemoteLogWriter struct {
 	sourceToken string
 	ingestURL   string
 	client      *http.Client
+}
+
+type resilientMultiWriter struct {
+	writers []io.Writer
+}
+
+func newResilientMultiWriter(writers ...io.Writer) io.Writer {
+	filtered := make([]io.Writer, 0, len(writers))
+	for _, writer := range writers {
+		if writer != nil {
+			filtered = append(filtered, writer)
+		}
+	}
+	return &resilientMultiWriter{writers: filtered}
+}
+
+func (w *resilientMultiWriter) Write(p []byte) (int, error) {
+	var firstErr error
+	wroteAny := false
+
+	for _, writer := range w.writers {
+		n, err := writer.Write(p)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if n != len(p) {
+			if firstErr == nil {
+				firstErr = io.ErrShortWrite
+			}
+			continue
+		}
+		wroteAny = true
+	}
+
+	if wroteAny {
+		return len(p), nil
+	}
+	if firstErr == nil {
+		firstErr = io.ErrClosedPipe
+	}
+	return 0, firstErr
 }
 
 func (w *RemoteLogWriter) Write(p []byte) (int, error) {
