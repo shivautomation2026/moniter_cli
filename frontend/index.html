@@ -81,6 +81,7 @@
             font-weight: 700;
             letter-spacing: -0.4px;
             background: linear-gradient(135deg, #1d4ed8, #7c3aed);
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -332,15 +333,21 @@
                         </div>
                     </div>
                 </div>
+                <div class="field two-col">
+                    <div class="field">
+                        <label for="client_name">Client Name</label>
+                        <input type="text" id="client_name" name="client_name" required />
+                    </div>
 
-                <div class="field">
-                    <label for="source_token">Source Token</label>
-                    <input type="text" id="source_token" name="source_token" />
+                    <div class="field">
+                        <label for="source_token">Source Token</label>
+                        <input type="text" id="source_token" name="source_token" required />
+                    </div>
                 </div>
 
                 <div class="field">
                     <label for="ingest_url">Ingest URL</label>
-                    <input type="url" id="ingest_url" name="ingest_url" />
+                    <input type="url" id="ingest_url" name="ingest_url" required />
                 </div>
 
                 <div class="field two-col">
@@ -357,19 +364,22 @@
 
                 <div class="field">
                     <label for="s3_endpoint_url">S3 Endpoint URL</label>
-                    <input type="url" id="s3_endpoint_url" name="s3_endpoint_url" />
+                    <input type="url" id="s3_endpoint_url" name="s3_endpoint_url" required />
                 </div>
+                <div class="field two-col">
+                    <div class="field">
+                        <label for="s3_access_key">S3 Access Key</label>
+                        <input type="text" id="s3_access_key" name="s3_access_key" required />
+                    </div>
 
-
-
-                <div class="field">
-                    <label for="s3_access_key">S3 Access Key</label>
-                    <input type="text" id="s3_access_key" name="s3_access_key" />
+                    <div class="field">
+                        <label for="s3_secret_key">S3 Secret Key</label>
+                        <input type="password" id="s3_secret_key" name="s3_secret_key" required />
+                    </div>
                 </div>
-
                 <div class="field">
-                    <label for="s3_secret_key">S3 Secret Key</label>
-                    <input type="password" id="s3_secret_key" name="s3_secret_key" />
+                    <label for="discord_webhook_url">Discord Webhook URL</label>
+                    <input type="url" id="discord_webhook_url" name="discord_webhook_url" />
                 </div>
 
                 <button type="submit" id="submitBtn">Save and Start</button>
