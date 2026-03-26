@@ -22,29 +22,50 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
+const (
+	primaryConfigFileName = "monitor_config.json"
+)
+
+var discordWebhookURL string
+
 type Config struct {
-	PDFFolder        string `json:"pdf_folder"`
-	BaseOutputFolder string `json:"base_output_folder"`
-	SourceToken      string `json:"source_token"`
-	IngestURL        string `json:"ingest_url"`
-	S3BucketName     string `json:"s3_bucket_name"`
-	S3EndpointURL    string `json:"s3_endpoint_url"`
-	S3Region         string `json:"s3_region"`
-	S3AccessKey      string `json:"s3_access_key"`
-	S3SecretKey      string `json:"s3_secret_key"`
+	PDFFolder         string `json:"pdf_folder"`
+	BaseOutputFolder  string `json:"base_output_folder"`
+	ClientName        string `json:"client_name"`
+	SourceToken       string `json:"source_token"`
+	IngestURL         string `json:"ingest_url"`
+	S3BucketName      string `json:"s3_bucket_name"`
+	S3EndpointURL     string `json:"s3_endpoint_url"`
+	S3Region          string `json:"s3_region"`
+	S3AccessKey       string `json:"s3_access_key"`
+	S3SecretKey       string `json:"s3_secret_key"`
+	DiscordWebhookURL string `json:"discord_webhook_url"`
+}
+
+type Monitor struct {
+	cfg       Config
+	logger    *log.Logger
+	logFile   *os.File
+	remoteLog io.Writer
+	s3Client  *s3.Client
+	handler   *DynamicFolderHandler
+	stopCh    chan struct{}
+	stopOnce  sync.Once
 }
 
 type App struct {
-	ctx        context.Context
-	wailsApp   *application.App
-	mainWindow *application.WebviewWindow
-	configPath string
-	monitor    *Monitor
-	monitorMu  sync.Mutex
-	lastStatus string
-	statusMu   sync.Mutex
-	allowQuit  bool
-	quitMu     sync.Mutex
+	ctx         context.Context
+	wailsApp    *application.App
+	mainWindow  *application.WebviewWindow
+	configPath  string
+	monitor     *Monitor
+	monitorMu   sync.Mutex
+	lastStatus  string
+	statusMu    sync.Mutex
+	allowQuit   bool
+	quitMu      sync.Mutex
+	showOnStart bool
+	showMu      sync.Mutex
 }
 
 func buildTray(wailsApp *application.App, app *App) *application.Menu {
@@ -68,7 +89,7 @@ func buildTray(wailsApp *application.App, app *App) *application.Menu {
 }
 func NewApp() *App {
 	app := &App{
-		configPath: "./monitor_config.json",
+		configPath: resolveConfigPath(),
 		lastStatus: "idle",
 	}
 
@@ -117,16 +138,17 @@ func (a *App) ServiceStartup(ctx context.Context, _ application.ServiceOptions) 
 		} else {
 			a.setStatus("config invalid: " + err.Error())
 		}
-		a.ShowWindow()
+		a.setShowOnStart(true)
 		return nil
 	}
 
 	if err := a.startMonitor(cfg); err != nil {
 		a.setStatus("config found, but failed to start monitor: " + err.Error())
-		a.ShowWindow()
+		a.setShowOnStart(true)
 	} else {
 		a.HideWindow()
 		a.setStatus("monitor running")
+		a.setShowOnStart(false)
 	}
 
 	return nil
@@ -149,6 +171,7 @@ func (a *App) loadValidatedConfig() (*Config, error) {
 	if err := validateConfig(*cfg); err != nil {
 		return nil, err
 	}
+	discordWebhookURL = cfg.DiscordWebhookURL
 
 	cfg.PDFFolder = normalizePath(cfg.PDFFolder)
 	cfg.BaseOutputFolder = normalizePath(cfg.BaseOutputFolder)
@@ -178,6 +201,18 @@ func (a *App) shouldAllowQuit() bool {
 	a.quitMu.Lock()
 	defer a.quitMu.Unlock()
 	return a.allowQuit
+}
+
+func (a *App) setShowOnStart(show bool) {
+	a.showMu.Lock()
+	a.showOnStart = show
+	a.showMu.Unlock()
+}
+
+func (a *App) shouldShowOnStart() bool {
+	a.showMu.Lock()
+	defer a.showMu.Unlock()
+	return a.showOnStart
 }
 
 func (a *App) PickFolder() (string, error) {
@@ -276,13 +311,88 @@ func validateConfig(cfg Config) error {
 	if strings.TrimSpace(cfg.S3BucketName) == "" {
 		return fmt.Errorf("s3_bucket_name is required")
 	}
-	if strings.TrimSpace(cfg.S3Region) == "" {
-		return fmt.Errorf("s3_region is required")
+	if strings.TrimSpace(cfg.S3EndpointURL) == "" {
+		return fmt.Errorf("s3_endpoint_url is required")
 	}
 	if (cfg.SourceToken == "") != (cfg.IngestURL == "") {
 		return fmt.Errorf("source_token and ingest_url must be provided together")
 	}
+	if (cfg.S3EndpointURL != "") && (cfg.S3AccessKey == "" || cfg.S3SecretKey == "") {
+		return fmt.Errorf("s3_access_key and s3_secret_key are required when s3_endpoint_url is provided")
+	}
+	if strings.TrimSpace(cfg.ClientName) == "" {
+		return fmt.Errorf("client_name is required")
+	}
+
 	return nil
+}
+
+func resolveConfigPath() string {
+	if envPath := strings.TrimSpace(os.Getenv("MONITER_CONFIG_PATH")); envPath != "" {
+		return normalizePath(envPath)
+	}
+
+	cwd, _ := os.Getwd()
+	exeDir := ""
+	if exePath, err := os.Executable(); err == nil {
+		exeDir = filepath.Dir(exePath)
+	}
+
+	return resolveConfigPathForLocations(cwd, exeDir, fileExists)
+}
+
+func resolveConfigPathForLocations(cwd, exeDir string, exists func(string) bool) string {
+	for _, candidate := range candidateConfigPaths(cwd, exeDir) {
+		if exists(candidate) {
+			return candidate
+		}
+	}
+
+	if exeDir != "" {
+		return filepath.Join(exeDir, primaryConfigFileName)
+	}
+	if cwd != "" {
+		return filepath.Join(cwd, primaryConfigFileName)
+	}
+	return primaryConfigFileName
+}
+
+func candidateConfigPaths(cwd, exeDir string) []string {
+	dirs := uniqueNonEmptyPaths(
+		exeDir,
+		cwd,
+	)
+
+	candidates := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		candidates = append(candidates, filepath.Join(dir, primaryConfigFileName))
+	}
+
+	return candidates
+}
+
+func uniqueNonEmptyPaths(paths ...string) []string {
+	seen := make(map[string]struct{}, len(paths))
+	result := make([]string, 0, len(paths))
+
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		cleaned := filepath.Clean(path)
+		if _, ok := seen[cleaned]; ok {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		result = append(result, cleaned)
+	}
+
+	return result
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -322,17 +432,6 @@ func normalizePath(p string) string {
 	return p
 }
 
-type Monitor struct {
-	cfg       Config
-	logger    *log.Logger
-	logFile   *os.File
-	remoteLog io.Writer
-	s3Client  *s3.Client
-	handler   *DynamicFolderHandler
-	stopCh    chan struct{}
-	stopOnce  sync.Once
-}
-
 func NewMonitor(cfg Config) (*Monitor, error) {
 	logger, logFile, remoteLog, err := configureLogging(cfg)
 	if err != nil {
@@ -358,25 +457,25 @@ func NewMonitor(cfg Config) (*Monitor, error) {
 }
 
 func (m *Monitor) Run() error {
-	if err := verifyS3Credentials(context.Background(), m.s3Client, m.cfg.S3BucketName, m.logger); err != nil {
+	if err := verifyS3Credentials(context.Background(), m.s3Client, m.cfg.S3BucketName, m.logger, m.cfg.ClientName); err != nil {
 		return err
 	}
 
-	handler, err := NewDynamicFolderHandler(m.cfg.PDFFolder, m.s3Client, m.cfg.S3BucketName, m.logger)
+	handler, err := NewDynamicFolderHandler(m.cfg.PDFFolder, m.s3Client, m.cfg.S3BucketName, m.logger, m.cfg.ClientName)
 	if err != nil {
 		return err
 	}
 	m.handler = handler
 
 	if err := handler.StartMonitoring(); err != nil {
-		m.logger.Printf("Waiting for today's folder: %s", handler.currentFolder)
+		m.logger.Printf("%s Waiting for today's folder: %s", m.cfg.ClientName, handler.currentFolder)
 	}
 
-	m.logger.Printf("Monitoring Started")
-	m.logger.Printf("Base folder: %s", m.cfg.PDFFolder)
-	m.logger.Printf("Current monitoring folder: %s", handler.currentFolder)
-	m.logger.Printf("Logs folder: %s", m.cfg.BaseOutputFolder)
-	m.logger.Printf("The program will automatically switch to new day's folder when available.")
+	m.logger.Printf("Monitoring Started for client: %s", m.cfg.ClientName)
+	m.logger.Printf("%s Base folder: %s", m.cfg.ClientName, m.cfg.PDFFolder)
+	m.logger.Printf("%s Current monitoring folder: %s", m.cfg.ClientName, handler.currentFolder)
+	m.logger.Printf("%s Logs folder: %s", m.cfg.ClientName, m.cfg.BaseOutputFolder)
+	m.logger.Printf("%s The program will automatically switch to new day's folder when available.", m.cfg.ClientName)
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -388,11 +487,11 @@ func (m *Monitor) Run() error {
 			if m.logFile != nil {
 				_ = m.logFile.Close()
 			}
-			m.logger.Printf("Monitoring stopped")
+			m.logger.Printf("%s Monitoring stopped", m.cfg.ClientName)
 			return nil
 		case <-ticker.C:
 			if err := handler.CheckForNewDay(); err != nil {
-				m.logger.Printf("check_for_new_day error: %v", err)
+				m.logger.Printf("%s check_for_new_day error: %v", m.cfg.ClientName, err)
 			}
 		}
 	}
@@ -429,7 +528,7 @@ func configureLogging(cfg Config) (*log.Logger, *os.File, io.Writer, error) {
 
 	logger := log.New(newResilientMultiWriter(writers...), "", log.LstdFlags)
 	logger.Printf("Daily Log File: %s", logFilePath)
-	logger.Printf("Configuration loaded.")
+	logger.Printf("Configuration loaded for client: %s", cfg.ClientName)
 	return logger, f, remote, nil
 }
 
@@ -455,6 +554,7 @@ func newResilientMultiWriter(writers ...io.Writer) io.Writer {
 
 func (w *resilientMultiWriter) Write(p []byte) (int, error) {
 	var firstErr error
+	shortWrite := false
 	wroteAny := false
 
 	for _, writer := range w.writers {
@@ -466,9 +566,7 @@ func (w *resilientMultiWriter) Write(p []byte) (int, error) {
 			continue
 		}
 		if n != len(p) {
-			if firstErr == nil {
-				firstErr = io.ErrShortWrite
-			}
+			shortWrite = true
 			continue
 		}
 		wroteAny = true
@@ -476,6 +574,9 @@ func (w *resilientMultiWriter) Write(p []byte) (int, error) {
 
 	if wroteAny {
 		return len(p), nil
+	}
+	if shortWrite {
+		return 0, io.ErrShortWrite
 	}
 	if firstErr == nil {
 		firstErr = io.ErrClosedPipe
@@ -510,7 +611,7 @@ func getS3Client(cfg Config, logger *log.Logger) (*s3.Client, error) {
 	ctx := context.Background()
 
 	if strings.TrimSpace(cfg.S3EndpointURL) == "" {
-		logger.Printf("Creating S3 client with default AWS configuration.")
+		logger.Printf("%s Creating S3 client with default AWS configuration.", cfg.ClientName)
 		awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.S3Region))
 		if err != nil {
 			return nil, err
@@ -518,7 +619,7 @@ func getS3Client(cfg Config, logger *log.Logger) (*s3.Client, error) {
 		return s3.NewFromConfig(awsCfg), nil
 	}
 
-	logger.Printf("Creating S3 client with custom endpoint. endpoint_url=%s region=%s", cfg.S3EndpointURL, cfg.S3Region)
+	logger.Printf("%s Creating S3 client with custom endpoint. endpoint_url=%s region=%s", cfg.ClientName, cfg.S3EndpointURL, cfg.S3Region)
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(
 		ctx,
@@ -537,30 +638,30 @@ func getS3Client(cfg Config, logger *log.Logger) (*s3.Client, error) {
 	}), nil
 }
 
-func verifyS3Credentials(ctx context.Context, s3Client *s3.Client, bucketName string, logger *log.Logger) error {
+func verifyS3Credentials(ctx context.Context, s3Client *s3.Client, bucketName string, logger *log.Logger, clientName string) error {
 	if strings.TrimSpace(bucketName) == "" {
 		return fmt.Errorf("s3 bucket name is missing from configuration")
 	}
-	logger.Printf("Verifying S3 credentials for bucket: %s", bucketName)
+	logger.Printf("%s Verifying S3 credentials for bucket: %s", clientName, bucketName)
 	_, err := s3Client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(bucketName),
 	})
 	if err != nil {
-		logger.Printf("Unable to access S3 bucket %s. Error: %v", bucketName, err)
+		logger.Printf("%s Unable to access S3 bucket %s. Error: %v", clientName, bucketName, err)
 		return err
 	}
-	logger.Printf("S3 credentials verified for bucket: %s", bucketName)
+	logger.Printf("%s S3 credentials verified for bucket: %s", clientName, bucketName)
 	return nil
 }
 
-func uploadFileToObjectStore(ctx context.Context, s3Client *s3.Client, filePath, bucketName, s3Key string, logger *log.Logger) error {
+func uploadFileToObjectStore(ctx context.Context, s3Client *s3.Client, filePath, bucketName, s3Key string, logger *log.Logger, clientName string) error {
 	s3Key = fmt.Sprintf("%d_%s", time.Now().Unix(), s3Key)
 
-	logger.Printf("Uploading file to S3: bucket=%s key=%s path=%s", bucketName, s3Key, filePath)
+	logger.Printf("%s Uploading file to S3: bucket=%s key=%s path=%s", clientName, bucketName, s3Key, filePath)
 
 	f, err := os.Open(filePath)
 	if err != nil {
-		logger.Printf("Upload failed: %v", err)
+		logger.Printf("%s Upload failed: %v", clientName, err)
 		return err
 	}
 	defer f.Close()
@@ -572,18 +673,19 @@ func uploadFileToObjectStore(ctx context.Context, s3Client *s3.Client, filePath,
 		Body:        f,
 	})
 	if err != nil {
-		logger.Printf("Upload failed: %v", err)
+		sendDiscordNotification(discordWebhookURL, fmt.Sprintf("Failed to upload file to S3: %v", err), logger, clientName)
+		logger.Printf("%s Upload failed: %v", clientName, err)
 		return err
 	}
-
-	logger.Printf("Upload completed: bucket=%s key=%s", bucketName, s3Key)
+	sendDiscordNotification(discordWebhookURL, fmt.Sprintf("File uploaded to S3 successfully: bucket=%s key=%s", bucketName, s3Key), logger, clientName)
+	logger.Printf("%s Upload completed: bucket=%s key=%s", clientName, bucketName, s3Key)
 	return nil
 }
 
-func processPDF(ctx context.Context, s3Client *s3.Client, bucketName, pdfPath string, logger *log.Logger) {
-	logger.Printf("Processing new PDF: %s", pdfPath)
-	if err := uploadFileToObjectStore(ctx, s3Client, pdfPath, bucketName, filepath.Base(pdfPath), logger); err != nil {
-		logger.Printf("process_pdf failed: %v", err)
+func processPDF(ctx context.Context, s3Client *s3.Client, bucketName, pdfPath string, logger *log.Logger, clientName string) {
+	logger.Printf("%s Processing new PDF: %s", clientName, pdfPath)
+	if err := uploadFileToObjectStore(ctx, s3Client, pdfPath, bucketName, filepath.Base(pdfPath), logger, clientName); err != nil {
+		logger.Printf("%s process_pdf failed: %v", clientName, err)
 	}
 }
 
@@ -617,9 +719,10 @@ type DynamicFolderHandler struct {
 	bucketName     string
 	logger         *log.Logger
 	mu             sync.Mutex
+	clientName     string
 }
 
-func NewDynamicFolderHandler(baseFolderPath string, s3Client *s3.Client, bucketName string, logger *log.Logger) (*DynamicFolderHandler, error) {
+func NewDynamicFolderHandler(baseFolderPath string, s3Client *s3.Client, bucketName string, logger *log.Logger, clientName string) (*DynamicFolderHandler, error) {
 	return &DynamicFolderHandler{
 		baseFolderPath: baseFolderPath,
 		currentFolder:  getCurrentDayFolder(baseFolderPath),
@@ -630,6 +733,7 @@ func NewDynamicFolderHandler(baseFolderPath string, s3Client *s3.Client, bucketN
 		s3Client:       s3Client,
 		bucketName:     bucketName,
 		logger:         logger,
+		clientName:     clientName,
 	}, nil
 }
 
@@ -740,7 +844,7 @@ func (h *DynamicFolderHandler) watchLoop() {
 					h.logger.Printf("Directory event ignored: %s", event.Name)
 					continue
 				}
-				h.processFile(event.Name)
+				h.processFile(event.Name, h.clientName)
 			}
 
 		case err, ok := <-w.Errors:
@@ -752,16 +856,16 @@ func (h *DynamicFolderHandler) watchLoop() {
 	}
 }
 
-func (h *DynamicFolderHandler) processFile(filePath string) {
+func (h *DynamicFolderHandler) processFile(filePath string, clientName string) {
 	if !strings.HasSuffix(strings.ToLower(filePath), ".pdf") {
-		h.logger.Printf("Skipping non-PDF file: %s", filePath)
+		h.logger.Printf("%s Skipping non-PDF file: %s", clientName, filePath)
 		return
 	}
 
 	h.mu.Lock()
 	if _, ok := h.processedFiles[filePath]; ok {
 		h.mu.Unlock()
-		h.logger.Printf("Skipping already processed file: %s", filePath)
+		h.logger.Printf("%s Skipping already processed file: %s", clientName, filePath)
 		return
 	}
 	if _, ok := h.processing[filePath]; ok {
@@ -786,14 +890,14 @@ func (h *DynamicFolderHandler) processFile(filePath string) {
 		h.mu.Lock()
 		if _, ok := h.processedFiles[filePath]; ok {
 			h.mu.Unlock()
-			h.logger.Printf("Skipping already processed file: %s", filePath)
+			h.logger.Printf("%s Skipping already processed file: %s", clientName, filePath)
 			return
 		}
 		h.processedFiles[filePath] = struct{}{}
 		h.mu.Unlock()
 
-		h.logger.Printf("New PDF detected (processed): %s", filePath)
-		processPDF(context.Background(), h.s3Client, h.bucketName, filePath, h.logger)
+		h.logger.Printf("%s New PDF detected (processed): %s", clientName, filePath)
+		processPDF(context.Background(), h.s3Client, h.bucketName, filePath, h.logger, clientName)
 	}()
 }
 

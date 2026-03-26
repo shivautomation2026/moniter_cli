@@ -48,6 +48,11 @@ func runWails() {
 
 	app.SetIcon(icon)
 	appInstance.setApplication(app)
+	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+		if appInstance.shouldShowOnStart() {
+			appInstance.ShowWindow()
+		}
+	})
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:        "Moniter CLI - ShivAutomation",

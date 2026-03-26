@@ -2,9 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type failingWriter struct{}
@@ -53,5 +58,64 @@ func TestResilientMultiWriterErrorsWhenAllWritersFail(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("Write returned %d bytes, want 0", n)
+	}
+}
+
+func TestResolveConfigPathPrefersExistingPrimaryConfig(t *testing.T) {
+	cwd := t.TempDir()
+	exeDir := t.TempDir()
+
+	existing := filepath.Join(exeDir, primaryConfigFileName)
+	if err := os.WriteFile(existing, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+
+	got := resolveConfigPathForLocations(cwd, exeDir, fileExists)
+	if got != existing {
+		t.Fatalf("resolveConfigPathForLocations() = %q, want %q", got, existing)
+	}
+}
+
+func TestResolveConfigPathFallsBackToExeDir(t *testing.T) {
+	cwd := t.TempDir()
+	exeDir := t.TempDir()
+
+	got := resolveConfigPathForLocations(cwd, exeDir, fileExists)
+	want := filepath.Join(exeDir, primaryConfigFileName)
+	if got != want {
+		t.Fatalf("resolveConfigPathForLocations() = %q, want %q", got, want)
+	}
+}
+
+func TestLoadValidatedConfigReturnsNotExistForMissingFile(t *testing.T) {
+	app := &App{
+		configPath: filepath.Join(t.TempDir(), primaryConfigFileName),
+	}
+
+	_, err := app.loadValidatedConfig()
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("loadValidatedConfig() error = %v, want %v", err, os.ErrNotExist)
+	}
+
+	if app.HasConfig() {
+		t.Fatalf("HasConfig() = true, want false")
+	}
+}
+
+func TestServiceStartupDefersWindowShowWhenConfigMissing(t *testing.T) {
+	app := &App{
+		configPath: filepath.Join(t.TempDir(), primaryConfigFileName),
+		lastStatus: "idle",
+	}
+
+	if err := app.ServiceStartup(context.Background(), application.ServiceOptions{}); err != nil {
+		t.Fatalf("ServiceStartup() error = %v", err)
+	}
+
+	if got := app.GetStatus(); got != "config not found" {
+		t.Fatalf("GetStatus() = %q, want %q", got, "config not found")
+	}
+	if !app.shouldShowOnStart() {
+		t.Fatalf("shouldShowOnStart() = false, want true")
 	}
 }
