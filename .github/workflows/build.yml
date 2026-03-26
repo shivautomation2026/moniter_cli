@@ -119,7 +119,7 @@ jobs:
           tag: ${{ steps.timestamp.outputs.tag }}
           name: Release ${{ steps.timestamp.outputs.tag }}
           body: |
-            Automated release generated from the manual GitHub Actions workflow.
+           ${{ github.event.head_commit.message }}
             Assets:
             - Linux build archive
             - Windows build archive
