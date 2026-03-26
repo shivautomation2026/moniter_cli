@@ -611,7 +611,7 @@ func getS3Client(cfg Config, logger *log.Logger) (*s3.Client, error) {
 	ctx := context.Background()
 
 	if strings.TrimSpace(cfg.S3EndpointURL) == "" {
-		logger.Printf("%s Creating S3 client with default AWS configuration.", cfg.ClientName)
+		logger.Printf("[%s] Creating S3 client with default AWS configuration.", cfg.ClientName)
 		awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.S3Region))
 		if err != nil {
 			return nil, err
@@ -619,7 +619,7 @@ func getS3Client(cfg Config, logger *log.Logger) (*s3.Client, error) {
 		return s3.NewFromConfig(awsCfg), nil
 	}
 
-	logger.Printf("%s Creating S3 client with custom endpoint. endpoint_url=%s region=%s", cfg.ClientName, cfg.S3EndpointURL, cfg.S3Region)
+	logger.Printf("[%s] Creating S3 client with custom endpoint. endpoint_url=%s region=%s", cfg.ClientName, cfg.S3EndpointURL, cfg.S3Region)
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(
 		ctx,
@@ -642,26 +642,26 @@ func verifyS3Credentials(ctx context.Context, s3Client *s3.Client, bucketName st
 	if strings.TrimSpace(bucketName) == "" {
 		return fmt.Errorf("s3 bucket name is missing from configuration")
 	}
-	logger.Printf("%s Verifying S3 credentials for bucket: %s", clientName, bucketName)
+	logger.Printf("[%s] Verifying S3 credentials for bucket: %s", clientName, bucketName)
 	_, err := s3Client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: aws.String(bucketName),
 	})
 	if err != nil {
-		logger.Printf("%s Unable to access S3 bucket %s. Error: %v", clientName, bucketName, err)
+		logger.Printf("[%s] Unable to access S3 bucket %s. Error: %v", clientName, bucketName, err)
 		return err
 	}
-	logger.Printf("%s S3 credentials verified for bucket: %s", clientName, bucketName)
+	logger.Printf("[%s] S3 credentials verified for bucket: %s", clientName, bucketName)
 	return nil
 }
 
 func uploadFileToObjectStore(ctx context.Context, s3Client *s3.Client, filePath, bucketName, s3Key string, logger *log.Logger, clientName string) error {
-	s3Key = fmt.Sprintf("%d_%s", time.Now().Unix(), s3Key)
+	s3Key = fmt.Sprintf("%s_%d_%s", clientName, time.Now().Unix(), s3Key)
 
-	logger.Printf("%s Uploading file to S3: bucket=%s key=%s path=%s", clientName, bucketName, s3Key, filePath)
+	logger.Printf("[%s] Uploading file to S3: bucket=%s key=%s path=%s", clientName, bucketName, s3Key, filePath)
 
 	f, err := os.Open(filePath)
 	if err != nil {
-		logger.Printf("%s Upload failed: %v", clientName, err)
+		logger.Printf("[%s] Upload failed: %v", clientName, err)
 		return err
 	}
 	defer f.Close()
@@ -674,18 +674,18 @@ func uploadFileToObjectStore(ctx context.Context, s3Client *s3.Client, filePath,
 	})
 	if err != nil {
 		sendDiscordNotification(discordWebhookURL, fmt.Sprintf("Failed to upload file to S3: %v", err), logger, clientName)
-		logger.Printf("%s Upload failed: %v", clientName, err)
+		logger.Printf("[%s] Upload failed: %v", clientName, err)
 		return err
 	}
-	sendDiscordNotification(discordWebhookURL, fmt.Sprintf("File uploaded to S3 successfully: bucket=%s key=%s", bucketName, s3Key), logger, clientName)
-	logger.Printf("%s Upload completed: bucket=%s key=%s", clientName, bucketName, s3Key)
+	sendDiscordNotification(discordWebhookURL, fmt.Sprintf("[%s] File uploaded to S3 successfully: bucket=%s filename=%s", clientName, bucketName, s3Key), logger, clientName)
+	logger.Printf("[%s] Upload completed: bucket=%s key=%s", clientName, bucketName, s3Key)
 	return nil
 }
 
 func processPDF(ctx context.Context, s3Client *s3.Client, bucketName, pdfPath string, logger *log.Logger, clientName string) {
-	logger.Printf("%s Processing new PDF: %s", clientName, pdfPath)
+	logger.Printf("[%s] Processing new PDF: %s", clientName, pdfPath)
 	if err := uploadFileToObjectStore(ctx, s3Client, pdfPath, bucketName, filepath.Base(pdfPath), logger, clientName); err != nil {
-		logger.Printf("%s process_pdf failed: %v", clientName, err)
+		logger.Printf("[%s] process_pdf failed: %v", clientName, err)
 	}
 }
 
@@ -743,7 +743,7 @@ func (h *DynamicFolderHandler) StartMonitoring() error {
 		return err
 	}
 	if created {
-		h.logger.Printf("Created current day folder: %s", h.currentFolder)
+		h.logger.Printf("[%s] Created current day folder: %s", h.clientName, h.currentFolder)
 	}
 
 	if h.watcher != nil {
@@ -761,7 +761,7 @@ func (h *DynamicFolderHandler) StartMonitoring() error {
 
 	h.watcher = w
 	go h.watchLoop()
-	h.logger.Printf("Started monitoring %s", h.currentFolder)
+	h.logger.Printf("[%s] Started monitoring %s", h.clientName, h.currentFolder)
 	return nil
 }
 
@@ -769,10 +769,10 @@ func (h *DynamicFolderHandler) Stop() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.watcher != nil {
-		h.logger.Printf("Stopping current observer.")
+		h.logger.Printf("[%s] Stopping current observer.", h.clientName)
 		_ = h.watcher.Close()
 		h.watcher = nil
-		h.logger.Printf("Observer stopped.")
+		h.logger.Printf("[%s] Observer stopped.", h.clientName)
 	}
 }
 
@@ -797,19 +797,19 @@ func (h *DynamicFolderHandler) CheckForNewDay() error {
 		return err
 	}
 	if created {
-		h.logger.Printf("Created current day folder: %s", expectedFolder)
+		h.logger.Printf("[%s] Created current day folder: %s", h.clientName, expectedFolder)
 	}
 
 	if watcherNil {
 		h.mu.Lock()
 		h.currentFolder = expectedFolder
 		h.mu.Unlock()
-		h.logger.Printf("Observer not running; starting monitoring for %s", expectedFolder)
+		h.logger.Printf("[%s] Observer not running; starting monitoring for %s", h.clientName, expectedFolder)
 		return h.StartMonitoring()
 	}
 
 	if expectedFolder != currentFolder {
-		h.logger.Printf("New day folder detected: %s", expectedFolder)
+		h.logger.Printf("[%s] New day folder detected: %s", h.clientName, expectedFolder)
 		h.Stop()
 		h.mu.Lock()
 		h.currentFolder = expectedFolder
@@ -841,7 +841,7 @@ func (h *DynamicFolderHandler) watchLoop() {
 			if event.Has(fsnotify.Create) || event.Has(fsnotify.Write) || event.Has(fsnotify.Rename) {
 				info, err := os.Stat(event.Name)
 				if err == nil && info.IsDir() {
-					h.logger.Printf("Directory event ignored: %s", event.Name)
+					h.logger.Printf("[%s] Directory event ignored: %s", h.clientName, event.Name)
 					continue
 				}
 				h.processFile(event.Name, h.clientName)
@@ -851,21 +851,21 @@ func (h *DynamicFolderHandler) watchLoop() {
 			if !ok {
 				return
 			}
-			h.logger.Printf("Watcher error: %v", err)
+			h.logger.Printf("[%s] Watcher error: %v", h.clientName, err)
 		}
 	}
 }
 
 func (h *DynamicFolderHandler) processFile(filePath string, clientName string) {
 	if !strings.HasSuffix(strings.ToLower(filePath), ".pdf") {
-		h.logger.Printf("%s Skipping non-PDF file: %s", clientName, filePath)
+		h.logger.Printf("[%s] Skipping non-PDF file: %s", clientName, filePath)
 		return
 	}
 
 	h.mu.Lock()
 	if _, ok := h.processedFiles[filePath]; ok {
 		h.mu.Unlock()
-		h.logger.Printf("%s Skipping already processed file: %s", clientName, filePath)
+		h.logger.Printf("[%s] Skipping already processed file: %s", clientName, filePath)
 		return
 	}
 	if _, ok := h.processing[filePath]; ok {
@@ -883,21 +883,21 @@ func (h *DynamicFolderHandler) processFile(filePath string, clientName string) {
 		}()
 
 		if !h.isFileReady(filePath, 30*time.Second, 1*time.Second) {
-			h.logger.Printf("File not ready or timed out: %s", filePath)
+			h.logger.Printf("[%s] File not ready or timed out: %s", h.clientName, filePath)
 			return
 		}
 
 		h.mu.Lock()
 		if _, ok := h.processedFiles[filePath]; ok {
 			h.mu.Unlock()
-			h.logger.Printf("%s Skipping already processed file: %s", clientName, filePath)
+			h.logger.Printf("[%s] Skipping already processed file: %s", h.clientName, filePath)
 			return
 		}
 		h.processedFiles[filePath] = struct{}{}
 		h.mu.Unlock()
 
-		h.logger.Printf("%s New PDF detected (processed): %s", clientName, filePath)
-		processPDF(context.Background(), h.s3Client, h.bucketName, filePath, h.logger, clientName)
+		h.logger.Printf("[%s] New PDF detected (processed): %s", h.clientName, filePath)
+		processPDF(context.Background(), h.s3Client, h.bucketName, filePath, h.logger, h.clientName)
 	}()
 }
 
@@ -908,17 +908,17 @@ func (h *DynamicFolderHandler) isFileReady(filePath string, timeout, checkInterv
 	for time.Since(start) < timeout {
 		info, err := os.Stat(filePath)
 		if err != nil {
-			h.logger.Printf("File not found while checking readiness: %s", filePath)
+			h.logger.Printf("[%s] File not found while checking readiness: %s", h.clientName, filePath)
 			return false
 		}
 		size := info.Size()
 		if size == lastSize {
-			h.logger.Printf("File ready: %s", filePath)
+			h.logger.Printf("[%s] File ready: %s", h.clientName, filePath)
 			return true
 		}
 		lastSize = size
 		time.Sleep(checkInterval)
 	}
-	h.logger.Printf("Timeout waiting for %s to be ready", filePath)
+	h.logger.Printf("[%s] Timeout waiting for %s to be ready", h.clientName, filePath)
 	return false
 }
